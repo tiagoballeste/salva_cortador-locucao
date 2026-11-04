@@ -65,7 +65,7 @@ const csvCell = (s: string | number) => {
 const num = (x: number) => x.toFixed(3).replace('.', ',')
 
 export function sheet(jobs: ExportJob[], opts: ExportOptions): string {
-  const head = ['duracao', 'take', 'arquivo', 'fala', 'entrada_s', 'saida_s', 'duracao_s', 'revisado']
+  const head = ['duracao', 'take', 'arquivo', 'fala', 'entrada_s', 'saida_s', 'silence_handle_s', 'duracao_arquivo_s', 'revisado']
   const rows = jobs.map((j) => {
     const dur = j.take.b - j.take.a + opts.padBefore + opts.padAfter
     return [
@@ -75,6 +75,7 @@ export function sheet(jobs: ExportJob[], opts: ExportOptions): string {
       j.take.text,
       num(j.take.a),
       num(j.take.b),
+      num(opts.padBefore),
       num(dur),
       j.take.reviewed ? 'sim' : 'nao',
     ]

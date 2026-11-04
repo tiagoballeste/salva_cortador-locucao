@@ -43,8 +43,7 @@ interface State {
   autoPreview: boolean
   onlyPending: boolean
   mono: boolean
-  padBefore: number
-  padAfter: number
+  handles: boolean
   scope: 'active' | 'all'
   loading: string | null
   error: string | null
@@ -122,8 +121,7 @@ export const useStore = create<State>((set, get) => ({
   autoPreview: true,
   onlyPending: false,
   mono: true,
-  padBefore: 0,
-  padAfter: 0,
+  handles: false,
   scope: 'all',
   loading: null,
   error: null,

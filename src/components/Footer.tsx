@@ -15,6 +15,8 @@ function downloadsCap(): Promise<Downloads | null> {
   return dlCap
 }
 
+const HANDLE_S = 1
+
 const ALLOWED = /\.(zip|csv|mp4|txt|json)$/i
 
 async function save(data: Uint8Array, name: string, type: string): Promise<boolean> {
@@ -65,8 +67,8 @@ export function Footer() {
     peca: s.peca,
     versao: s.versao,
     mono: s.mono,
-    padBefore: s.padBefore,
-    padAfter: s.padAfter,
+    padBefore: s.handles ? HANDLE_S : 0,
+    padAfter: s.handles ? HANDLE_S : 0,
     folders: false,
   }
 
@@ -158,32 +160,6 @@ export function Footer() {
               </button>
             </div>
           )}
-          <label className="flex items-center gap-1.5">
-            Respiro antes
-            <input
-              className="field !h-7 w-14 font-mono text-[12px]"
-              type="number"
-              min={0}
-              max={2}
-              step={0.1}
-              value={s.padBefore}
-              onChange={(e) => s.set({ padBefore: Math.max(0, Math.min(2, Number(e.target.value) || 0)) })}
-            />
-            s
-          </label>
-          <label className="flex items-center gap-1.5">
-            depois
-            <input
-              className="field !h-7 w-14 font-mono text-[12px]"
-              type="number"
-              min={0}
-              max={2}
-              step={0.1}
-              value={s.padAfter}
-              onChange={(e) => s.set({ padAfter: Math.max(0, Math.min(2, Number(e.target.value) || 0)) })}
-            />
-            s
-          </label>
         </div>
       )}
       <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-3 px-6 py-3">
@@ -203,9 +179,23 @@ export function Footer() {
             <Settings2 size={14} aria-hidden />
             {s.mono ? 'Mono' : 'Canais originais'}
             {multi ? (s.scope === 'all' ? ' · Todas as durações' : ' · Esta duração') : ''}
-            {s.padBefore || s.padAfter ? ` · respiro ${s.padBefore}s/${s.padAfter}s` : ' · sem respiro'}
             <ChevronUp size={14} className={showOpts ? '' : 'rotate-180'} aria-hidden />
           </button>
+          <label
+            className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1 text-[12px] transition-colors ${
+              s.handles ? 'border-accent-strong bg-accent-soft text-accent' : 'border-line text-fg-2 hover:border-line-strong'
+            }`}
+            title="Adiciona 1s de silêncio no começo e 1s no fim de cada take exportado"
+          >
+            <input
+              type="checkbox"
+              className="chk !h-4 !w-4"
+              checked={s.handles}
+              onChange={(e) => s.set({ handles: e.target.checked })}
+              data-testid="handles"
+            />
+            Silence handle <span className={s.handles ? 'text-accent' : 'text-fg-3'}>+1s no começo e no fim</span>
+          </label>
         </div>
         <span className="flex-1" />
         {progress ? (

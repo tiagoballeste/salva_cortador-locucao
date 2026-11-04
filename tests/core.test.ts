@@ -95,3 +95,20 @@ describe.skipIf(!has15)('locução real SO_AMANHA 15s (regravada)', () => {
     expect(speechBlocks(an).length).toBe(6)
   })
 })
+
+describe('silence handle', () => {
+  it('soma 1s de silêncio no começo e no fim', () => {
+    const sr = 48000
+    const tone = new Float32Array(sr * 2).map((_, i) => Math.sin(i / 10) * 0.5)
+    const audio = { sampleRate: sr, bitDepth: 24, format: 'int' as const, channels: [tone], length: tone.length, duration: 2 }
+    const takes = [{ id: 'a', a: 0.5, b: 1.5, text: '', reviewed: true }]
+    const opts = { peca: 'X', versao: 1, mono: true, padBefore: 1, padAfter: 1, folders: false }
+    const [job] = planExport([{ label: '6s', audio, takes }], null, opts)
+    const wav = parseWav(renderWav(job, opts).buffer as ArrayBuffer)
+    expect(wav.duration).toBeCloseTo(3, 3)
+    expect(Math.max(...wav.channels[0].slice(0, sr).map(Math.abs))).toBe(0)
+    expect(Math.max(...wav.channels[0].slice(sr * 2).map(Math.abs))).toBe(0)
+    expect(Math.max(...wav.channels[0].slice(sr, sr * 2).map(Math.abs))).toBeGreaterThan(0.4)
+    expect(sheet([job], opts)).toContain(';1,000;3,000;sim')
+  })
+})
