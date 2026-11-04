@@ -7,6 +7,7 @@ export function Login() {
   const params = new URLSearchParams(location.search)
   const reason = params.get('login')
   const email = params.get('email')
+  const motivo = params.get('motivo')
   const msg =
     reason === 'nao-liberado'
       ? `O e-mail ${email ?? ''} não tem acesso. Peça para um administrador liberar.`
@@ -31,6 +32,7 @@ export function Login() {
           Entrar com Google
         </a>
         {msg && <p className="mt-4 text-[13px] text-danger">{msg}</p>}
+        {motivo && <p className="mt-1 font-mono text-[11px] text-fg-3">código: {motivo}</p>}
         <p className="mt-6 text-[12px] text-fg-3">Use seu e-mail @salva.studio. Freelancers entram com o e-mail que foi liberado.</p>
         <a href="/privacidade" className="mt-2 inline-block text-[12px] text-fg-3 underline hover:text-fg-2">
           Política de privacidade

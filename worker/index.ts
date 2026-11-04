@@ -68,8 +68,13 @@ async function startSession(env: Env, user: Omit<SessionUser, 'exp'>, origin: st
   return new Response(null, { status: 302, headers: h })
 }
 
-const deny = (origin: string, reason: string, email = '') =>
-  Response.redirect(`${origin}/?login=${reason}${email ? `&email=${encodeURIComponent(email)}` : ''}`, 302)
+const deny = (origin: string, reason: string, email = '', detail = '') => {
+  if (detail) console.warn(`login negado: ${reason} (${detail})`)
+  const q = new URLSearchParams({ login: reason })
+  if (email) q.set('email', email)
+  if (detail) q.set('motivo', detail)
+  return Response.redirect(`${origin}/?${q}`, 302)
+}
 
 async function auth(req: Request, env: Env, url: URL): Promise<Response> {
   const origin = url.origin
@@ -93,7 +98,11 @@ async function auth(req: Request, env: Env, url: URL): Promise<Response> {
   if (url.pathname === '/auth/callback') {
     const state = url.searchParams.get('state')
     const code = url.searchParams.get('code')
-    if (!code || !state || state !== readCookie(req.headers.get('cookie'), 'oauth_state')) return deny(origin, 'falhou')
+    const gErr = url.searchParams.get('error')
+    if (gErr) return deny(origin, 'falhou', '', `google:${gErr}`)
+    if (!code || !state) return deny(origin, 'falhou', '', 'sem-codigo')
+    if (state !== readCookie(req.headers.get('cookie'), 'oauth_state')) return deny(origin, 'falhou', '', 'estado')
+    if (!env.GOOGLE_CLIENT_SECRET) return deny(origin, 'nao-configurado', '', 'sem-secret')
     const tok = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -105,7 +114,17 @@ async function auth(req: Request, env: Env, url: URL): Promise<Response> {
         grant_type: 'authorization_code',
       }),
     })
-    if (!tok.ok) return deny(origin, 'falhou')
+    if (!tok.ok) {
+      const body = await tok.text()
+      let code = `token-${tok.status}`
+      try {
+        code += `:${(JSON.parse(body) as { error?: string }).error ?? ''}`
+      } catch {
+        /* resposta sem JSON */
+      }
+      console.warn('troca de código falhou', tok.status, body.slice(0, 300))
+      return deny(origin, 'falhou', '', code)
+    }
     const { id_token } = (await tok.json()) as { id_token?: string }
     const claims = id_token ? decodeJwtPayload(id_token) : null
     const iss = String(claims?.iss ?? '')
@@ -116,7 +135,7 @@ async function auth(req: Request, env: Env, url: URL): Promise<Response> {
       claims.email_verified !== true ||
       typeof claims.email !== 'string'
     )
-      return deny(origin, 'falhou')
+      return deny(origin, 'falhou', '', `claims:${String(claims?.aud ?? '').slice(0, 12)}:${iss}:${String(claims?.email_verified)}`)
     const email = claims.email.toLowerCase()
     await ensureSchema(env)
     if (!(await allowed(env, email))) return deny(origin, 'nao-liberado', email)
