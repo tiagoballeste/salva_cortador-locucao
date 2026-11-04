@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ChevronUp, Download, Settings2, TriangleAlert } from 'lucide-react'
-import { planExport, renderWav, sheet, zipFiles, type ExportJob, type ExportOptions } from '../core/exporter'
+import { planExport, renderMp4, renderWav, sheet, zipFiles, type ExportJob, type ExportOptions } from '../core/exporter'
 import { cleanToken } from '../core/takes'
 import { activeVersion, sources, useStore } from '../store'
 import { markDownloaded } from '../cloud'
@@ -88,36 +88,51 @@ export function Footer() {
   const run = async (jobs: ExportJob[]) => {
     setConfirm(null)
     if (!jobs.length) return
-    if (jobs.length === 1) {
-      try {
-        if (await save(renderWav(jobs[0], opts), `${jobs[0].base}.wav`, 'audio/wav')) {
+    const wantWav = s.format !== 'mp4'
+    const wantMp4 = s.format !== 'wav'
+    const perJob = (wantWav ? 1 : 0) + (wantMp4 ? 1 : 0)
+    const n = jobs.length * perJob
+    try {
+      if (n === 1) {
+        setProgress({ i: 1, n: 1 })
+        await new Promise((r) => setTimeout(r, 0))
+        const j = jobs[0]
+        const ok = wantWav
+          ? await save(renderWav(j, opts), `${j.base}.wav`, 'audio/wav')
+          : await save(await renderMp4(j, opts, s.aspect), `${j.base}.mp4`, 'video/mp4')
+        setProgress(null)
+        if (ok) {
           s.showToast('1 arquivo baixado')
           void markDownloaded()
         }
-      } catch (e) {
-        s.showToast((e as Error).message)
+        return
       }
-      return
-    }
-    const files: Record<string, Uint8Array> = {}
-    for (let i = 0; i < jobs.length; i++) {
-      setProgress({ i: i + 1, n: jobs.length })
-      await new Promise((r) => setTimeout(r, 0))
-      files[`${jobs[i].path}.wav`] = renderWav(jobs[i], opts)
-    }
-    files['planilha_de_takes.csv'] = new TextEncoder().encode(sheet(jobs, opts))
-    const zip = zipFiles(files)
-    const labels = [...new Set(jobs.map((j) => j.version.label))]
-    const scopeName = labels.length > 1 ? 'todas' : cleanToken(labels[0])
-    setProgress(null)
-    try {
+      const files: Record<string, Uint8Array> = {}
+      let k = 0
+      for (const j of jobs) {
+        if (wantWav) {
+          setProgress({ i: ++k, n })
+          await new Promise((r) => setTimeout(r, 0))
+          files[`${j.path}.wav`] = renderWav(j, opts)
+        }
+        if (wantMp4) {
+          setProgress({ i: ++k, n })
+          files[`${j.path}.mp4`] = await renderMp4(j, opts, s.aspect)
+        }
+      }
+      files['planilha_de_takes.csv'] = new TextEncoder().encode(sheet(jobs, opts))
+      const zip = zipFiles(files)
+      const labels = [...new Set(jobs.map((j) => j.version.label))]
+      const scopeName = labels.length > 1 ? 'todas' : cleanToken(labels[0])
+      setProgress(null)
       const ok = await save(zip, `${cleanToken(s.peca) || 'takes'}_${scopeName}_v${String(s.versao).padStart(2, '0')}.zip`, 'application/zip')
       if (ok) {
-        s.showToast(`${jobs.length} arquivos no zip, com a planilha de takes`)
+        s.showToast(`${n} arquivos no zip, com a planilha de takes`)
         void markDownloaded()
       }
     } catch (e) {
-      s.showToast((e as Error).message)
+      setProgress(null)
+      s.showToast(`Não consegui gerar os arquivos: ${(e as Error).message}`)
     }
   }
 
@@ -203,6 +218,40 @@ export function Footer() {
             />
             Silence handle <span className={s.handles ? 'text-accent' : 'text-fg-3'}>+1s no começo e no fim</span>
           </label>
+          <div className="flex items-center gap-1 rounded-lg border border-line p-0.5" role="group" aria-label="Formato dos arquivos">
+            {(
+              [
+                ['wav', 'WAV'],
+                ['mp4', 'MP4 preto'],
+                ['both', 'WAV + MP4'],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                className={`btn btn-sm !h-6 !border-0 ${s.format === k ? 'on' : 'btn-ghost'}`}
+                onClick={() => s.set({ format: k })}
+                aria-pressed={s.format === k}
+                data-testid={`format-${k}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {s.format !== 'wav' && (
+            <label className="flex items-center gap-1.5" title="Proporção do vídeo preto. Use a mesma do vídeo que vai gerar no Seedance.">
+              <select
+                className="field !h-7 !px-2 text-[12px]"
+                value={s.aspect}
+                onChange={(e) => s.set({ aspect: e.target.value as typeof s.aspect })}
+                aria-label="Proporção do MP4"
+                data-testid="aspect"
+              >
+                <option value="9:16">9:16 · 720×1280</option>
+                <option value="16:9">16:9 · 1280×720</option>
+                <option value="1:1">1:1 · 720×720</option>
+              </select>
+            </label>
+          )}
         </div>
         <span className="flex-1" />
         {progress ? (

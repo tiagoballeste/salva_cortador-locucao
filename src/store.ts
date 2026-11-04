@@ -7,6 +7,7 @@ import {
 } from './core/takes'
 import { player } from './core/player'
 import type { AuthState } from './api'
+import type { Aspect } from './core/mp4'
 
 export interface Source {
   audio: PcmAudio
@@ -54,6 +55,8 @@ interface State {
   onlyPending: boolean
   mono: boolean
   handles: boolean
+  format: 'wav' | 'mp4' | 'both'
+  aspect: Aspect
   scope: 'active' | 'all'
   loading: string | null
   error: string | null
@@ -136,6 +139,8 @@ export const useStore = create<State>((set, get) => ({
   onlyPending: false,
   mono: true,
   handles: false,
+  format: 'wav',
+  aspect: '9:16',
   scope: 'all',
   loading: null,
   error: null,

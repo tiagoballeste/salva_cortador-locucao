@@ -12,8 +12,10 @@
     "build:single": "SINGLE=1 vite build"
   },
   "dependencies": {
+    "@mediabunny/aac-encoder": "^1.65.2",
     "fflate": "^0.8.3",
     "lucide-react": "^1.68.0",
+    "mediabunny": "^1.65.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zustand": "^5.0.16"

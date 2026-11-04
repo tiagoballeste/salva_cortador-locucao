@@ -23,6 +23,8 @@ function stateOf(): CutState | null {
     versao: s.versao,
     mono: s.mono,
     handles: s.handles,
+    format: s.format,
+    aspect: s.aspect,
   }
 }
 
@@ -100,7 +102,7 @@ export async function saveNow() {
 
 useStore.subscribe((s, prev) => {
   if (!online() || !s.cutId) return
-  if (s.versions === prev.versions && s.peca === prev.peca && s.versao === prev.versao && s.mono === prev.mono && s.handles === prev.handles)
+  if (s.versions === prev.versions && s.peca === prev.peca && s.versao === prev.versao && s.mono === prev.mono && s.handles === prev.handles && s.format === prev.format && s.aspect === prev.aspect)
     return
   if (s.cutId !== prev.cutId) return
   useStore.setState({ saveStatus: 'saving' })
@@ -171,6 +173,8 @@ export async function openCut(id: string) {
       versao: cut.state.versao ?? 1,
       mono: cut.state.mono ?? true,
       handles: cut.state.handles ?? false,
+      format: cut.state.format ?? 'wav',
+      aspect: cut.state.aspect ?? '9:16',
       activeId: first?.id ?? null,
       openId: first ? sortTakes(first.takes)[0]?.id ?? null : null,
       saveStatus: 'saved',

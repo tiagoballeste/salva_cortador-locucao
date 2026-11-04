@@ -1,5 +1,6 @@
 import { zipSync, type Zippable } from 'fflate'
 import { encodeWav, slice, type PcmAudio } from './wav'
+import { blackMp4, type Aspect } from './mp4'
 import { fileBase, sortTakes, takeLabel, type Take } from './takes'
 
 export interface ExportVersion {
@@ -39,11 +40,19 @@ export function planExport(versions: ExportVersion[], selected: Set<string> | nu
   return jobs
 }
 
-export function renderWav(job: ExportJob, opts: ExportOptions): Uint8Array {
+function takeChannels(job: ExportJob, opts: ExportOptions): Float32Array[] {
   const { audio } = job.version
   const parts = slice(audio.channels, audio.sampleRate, job.take.a, job.take.b, opts.mono)
-  const padded = addSilence(parts, audio.sampleRate, opts.padBefore, opts.padAfter)
-  return encodeWav(padded, audio.sampleRate, audio.bitDepth, audio.format)
+  return addSilence(parts, audio.sampleRate, opts.padBefore, opts.padAfter)
+}
+
+export function renderWav(job: ExportJob, opts: ExportOptions): Uint8Array {
+  const { audio } = job.version
+  return encodeWav(takeChannels(job, opts), audio.sampleRate, audio.bitDepth, audio.format)
+}
+
+export function renderMp4(job: ExportJob, opts: ExportOptions, aspect: Aspect): Promise<Uint8Array> {
+  return blackMp4(takeChannels(job, opts), job.version.audio.sampleRate, aspect)
 }
 
 export function addSilence(parts: Float32Array[], sr: number, before: number, after: number): Float32Array[] {

@@ -37,6 +37,8 @@ export interface CutState {
   versao: number
   mono: boolean
   handles: boolean
+  format?: 'wav' | 'mp4' | 'both'
+  aspect?: '9:16' | '16:9' | '1:1'
 }
 
 export interface Invite {
