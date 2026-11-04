@@ -16,6 +16,7 @@
     { "binding": "AUDIO", "id": "fe496024f6a44ffea29116b9c2a3cfad" }
   ],
   "vars": {
+    "GOOGLE_CLIENT_ID": "234929306973-e0iulugebhtakn9f2llitoia1ancr7ds.apps.googleusercontent.com",
     "ALLOWED_DOMAIN": "salva.studio",
     "ADMIN_EMAILS": "tiago@salva.studio,tiagoprado000@gmail.com",
     "RETENTION_DAYS": "90"
