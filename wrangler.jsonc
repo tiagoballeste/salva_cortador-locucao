@@ -18,7 +18,7 @@
   "vars": {
     "GOOGLE_CLIENT_ID": "234929306973-e0iulugebhtakn9f2llitoia1ancr7ds.apps.googleusercontent.com",
     "ALLOWED_DOMAIN": "salva.studio",
-    "ADMIN_EMAILS": "tiago@salva.studio,tiagoprado000@gmail.com",
+    "ADMIN_EMAILS": "tiago@salva.studio",
     "RETENTION_DAYS": "90"
   },
   "triggers": { "crons": ["17 9 * * *"] },
