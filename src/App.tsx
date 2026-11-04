@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AudioLines, Check, Ear, Keyboard, Magnet, Pause as PauseIcon, Play, Plus, Undo2, Upload, X } from 'lucide-react'
+import { AudioLines, Check, Ear, LogOut, Keyboard, Magnet, Pause as PauseIcon, Play, Plus, Undo2, Upload, X } from 'lucide-react'
 import { sortTakes } from './core/takes'
 import { player } from './core/player'
 import { activeVersion, findTake, sources, useStore, type Version } from './store'
@@ -138,6 +138,33 @@ function Tabs() {
       <button className="btn btn-ghost btn-sm" onClick={() => pickFiles(s.addFiles)}>
         <Plus size={14} aria-hidden /> Duração
       </button>
+    </div>
+  )
+}
+
+function UserBadge() {
+  const [who, setWho] = useState<{ email: string } | null>(null)
+  useEffect(() => {
+    if (!/^https?:$/.test(location.protocol)) return
+    fetch('/cdn-cgi/access/get-identity', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (j && typeof j.email === 'string') setWho({ email: j.email })
+      })
+      .catch(() => {})
+  }, [])
+  if (!who) return null
+  return (
+    <div className="flex items-center gap-2 text-[12px] text-fg-2" data-testid="user">
+      <span className="grid h-6 w-6 place-items-center rounded-full bg-accent-soft text-[11px] font-semibold text-accent" aria-hidden>
+        {who.email[0]?.toUpperCase()}
+      </span>
+      <span className="max-w-[200px] truncate" title={who.email}>
+        {who.email}
+      </span>
+      <a className="btn btn-ghost btn-sm" href="/cdn-cgi/access/logout" title="Sair da ferramenta">
+        <LogOut size={14} aria-hidden /> Sair
+      </a>
     </div>
   )
 }
@@ -434,6 +461,7 @@ export default function App() {
           <button className="btn btn-ghost btn-sm" onClick={() => s.set({ help: true })}>
             <Keyboard size={14} aria-hidden /> Atalhos <kbd>?</kbd>
           </button>
+          <UserBadge />
         </div>
       </header>
 
