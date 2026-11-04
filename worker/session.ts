@@ -79,3 +79,22 @@ export function isAdmin(email: string, admins: string): boolean {
     .filter(Boolean)
     .includes(email.toLowerCase())
 }
+
+export async function signState(secret: string): Promise<string> {
+  const body = `${Date.now()}.${crypto.randomUUID()}`
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', await key(`state:${secret}`), enc.encode(body)))
+  return `${body}.${b64url(sig)}`
+}
+
+export async function verifyState(state: string, secret: string, maxAgeMs = 15 * 60_000): Promise<boolean> {
+  const i = state.lastIndexOf('.')
+  if (i < 0) return false
+  const body = state.slice(0, i)
+  const ts = Number(body.split('.')[0])
+  if (!ts || Date.now() - ts > maxAgeMs) return false
+  try {
+    return await crypto.subtle.verify('HMAC', await key(`state:${secret}`), fromB64url(state.slice(i + 1)), enc.encode(body))
+  } catch {
+    return false
+  }
+}

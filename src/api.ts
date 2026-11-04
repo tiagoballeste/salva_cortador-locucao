@@ -75,8 +75,9 @@ export async function loadAuth(): Promise<AuthState> {
   if (!/^https?:$/.test(location.protocol) || location.hostname.endsWith('claudeusercontent.com')) return { mode: 'offline' }
   try {
     const r = await fetch('/api/me', { credentials: 'same-origin' })
+    if (!r.headers.get('content-type')?.includes('application/json')) return { mode: 'offline' }
     if (r.status === 401) return { mode: 'anon' }
-    if (!r.ok || !r.headers.get('content-type')?.includes('application/json')) return { mode: 'offline' }
+    if (!r.ok) return { mode: 'offline' }
     return { mode: 'user', me: (await r.json()) as Me }
   } catch {
     return { mode: 'offline' }

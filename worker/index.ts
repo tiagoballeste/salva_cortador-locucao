@@ -1,5 +1,5 @@
 import {
-  cookie, decodeJwtPayload, isAdmin, isStaff, readCookie, signSession, verifySession, type SessionUser,
+  cookie, decodeJwtPayload, isAdmin, isStaff, readCookie, signSession, signState, verifySession, verifyState, type SessionUser,
 } from './session'
 
 export interface Env {
@@ -64,7 +64,6 @@ async function startSession(env: Env, user: Omit<SessionUser, 'exp'>, origin: st
   const token = await signSession({ ...user, exp: Date.now() + SESSION_DAYS * DAY }, secretOf(env))
   const h = new Headers({ location: `${origin}/` })
   h.append('set-cookie', cookie('sess', token, SESSION_DAYS * 86400))
-  h.append('set-cookie', cookie('oauth_state', '', 0))
   return new Response(null, { status: 302, headers: h })
 }
 
@@ -76,12 +75,13 @@ const deny = (origin: string, reason: string, email = '', detail = '') => {
   return Response.redirect(`${origin}/?${q}`, 302)
 }
 
-async function auth(req: Request, env: Env, url: URL): Promise<Response> {
+async function auth(_req: Request, env: Env, url: URL): Promise<Response> {
   const origin = url.origin
   const redirectUri = `${origin}/auth/callback`
   if (url.pathname === '/auth/login') {
-    if (!env.GOOGLE_CLIENT_ID) return deny(origin, 'nao-configurado')
-    const state = crypto.randomUUID()
+    if (!env.GOOGLE_CLIENT_ID) return deny(origin, 'nao-configurado', '', 'sem-client-id')
+    if (!env.GOOGLE_CLIENT_SECRET) return deny(origin, 'nao-configurado', '', 'sem-secret')
+    const state = await signState(secretOf(env))
     const q = new URLSearchParams({
       client_id: env.GOOGLE_CLIENT_ID,
       redirect_uri: redirectUri,
@@ -92,7 +92,7 @@ async function auth(req: Request, env: Env, url: URL): Promise<Response> {
     })
     return new Response(null, {
       status: 302,
-      headers: { location: `https://accounts.google.com/o/oauth2/v2/auth?${q}`, 'set-cookie': cookie('oauth_state', state, 600) },
+      headers: { location: `https://accounts.google.com/o/oauth2/v2/auth?${q}` },
     })
   }
   if (url.pathname === '/auth/callback') {
@@ -101,8 +101,8 @@ async function auth(req: Request, env: Env, url: URL): Promise<Response> {
     const gErr = url.searchParams.get('error')
     if (gErr) return deny(origin, 'falhou', '', `google:${gErr}`)
     if (!code || !state) return deny(origin, 'falhou', '', 'sem-codigo')
-    if (state !== readCookie(req.headers.get('cookie'), 'oauth_state')) return deny(origin, 'falhou', '', 'estado')
     if (!env.GOOGLE_CLIENT_SECRET) return deny(origin, 'nao-configurado', '', 'sem-secret')
+    if (!(await verifyState(state, secretOf(env)))) return deny(origin, 'falhou', '', 'estado')
     const tok = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },

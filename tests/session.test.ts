@@ -31,3 +31,14 @@ describe('sessão', () => {
     expect(decodeJwtPayload(jwt)?.email).toBe('a@b.c')
   })
 })
+
+import { signState, verifyState } from '../worker/session'
+describe('estado do login', () => {
+  it('aceita estado assinado e recusa adulterado ou velho', async () => {
+    const s = await signState('segredo')
+    expect(await verifyState(s, 'segredo')).toBe(true)
+    expect(await verifyState(s, 'outro')).toBe(false)
+    expect(await verifyState(s.replace(/^\d+/, '1'), 'segredo')).toBe(false)
+    expect(await verifyState(s, 'segredo', -1)).toBe(false)
+  })
+})
