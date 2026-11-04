@@ -3,6 +3,7 @@ import { ChevronUp, Download, Settings2, TriangleAlert } from 'lucide-react'
 import { planExport, renderWav, sheet, zipFiles, type ExportJob, type ExportOptions } from '../core/exporter'
 import { cleanToken } from '../core/takes'
 import { activeVersion, sources, useStore } from '../store'
+import { markDownloaded } from '../cloud'
 
 type Downloads = { save: (r: { filename: string; data: Blob | Uint8Array }) => Promise<unknown> }
 let dlCap: Promise<Downloads | null> | null = null
@@ -89,7 +90,10 @@ export function Footer() {
     if (!jobs.length) return
     if (jobs.length === 1) {
       try {
-        if (await save(renderWav(jobs[0], opts), `${jobs[0].base}.wav`, 'audio/wav')) s.showToast('1 arquivo baixado')
+        if (await save(renderWav(jobs[0], opts), `${jobs[0].base}.wav`, 'audio/wav')) {
+          s.showToast('1 arquivo baixado')
+          void markDownloaded()
+        }
       } catch (e) {
         s.showToast((e as Error).message)
       }
@@ -108,7 +112,10 @@ export function Footer() {
     setProgress(null)
     try {
       const ok = await save(zip, `${cleanToken(s.peca) || 'takes'}_${scopeName}_v${String(s.versao).padStart(2, '0')}.zip`, 'application/zip')
-      if (ok) s.showToast(`${jobs.length} arquivos no zip, com a planilha de takes`)
+      if (ok) {
+        s.showToast(`${jobs.length} arquivos no zip, com a planilha de takes`)
+        void markDownloaded()
+      }
     } catch (e) {
       s.showToast((e as Error).message)
     }

@@ -1,0 +1,302 @@
+import {
+  cookie, decodeJwtPayload, isAdmin, isStaff, readCookie, signSession, verifySession, type SessionUser,
+} from './session'
+
+export interface Env {
+  ASSETS: Fetcher
+  DB: D1Database
+  AUDIO: KVNamespace
+  GOOGLE_CLIENT_ID: string
+  GOOGLE_CLIENT_SECRET: string
+  ALLOWED_DOMAIN: string
+  ADMIN_EMAILS: string
+  RETENTION_DAYS?: string
+  DEV_LOGIN?: string
+}
+
+const DAY = 86_400_000
+const SESSION_DAYS = 30
+const MAX_AUDIO = 25 * 1024 * 1024
+
+const json = (data: unknown, status = 200, headers: HeadersInit = {}) =>
+  new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } })
+const err = (status: number, message: string) => json({ error: message }, status)
+const secretOf = (env: Env) => env.GOOGLE_CLIENT_SECRET || (env.DEV_LOGIN === '1' ? 'dev-secret' : '')
+const retention = (env: Env) => Math.max(1, Number(env.RETENTION_DAYS || 90)) * DAY
+
+let schemaReady: Promise<unknown> | null = null
+function ensureSchema(env: Env) {
+  schemaReady ??= env.DB.batch([
+    env.DB.prepare(
+      `CREATE TABLE IF NOT EXISTS cuts (
+        id TEXT PRIMARY KEY, owner TEXT NOT NULL, peca TEXT NOT NULL, summary TEXT NOT NULL, state TEXT NOT NULL,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_download_at INTEGER)`,
+    ),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS cuts_owner ON cuts(owner, updated_at DESC)'),
+    env.DB.prepare(
+      `CREATE TABLE IF NOT EXISTS invites (
+        email TEXT PRIMARY KEY, expires_at INTEGER NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL)`,
+    ),
+  ]).catch((e) => {
+    schemaReady = null
+    throw e
+  })
+  return schemaReady
+}
+
+async function inviteValid(env: Env, email: string): Promise<boolean> {
+  const row = await env.DB.prepare('SELECT expires_at FROM invites WHERE email = ?').bind(email.toLowerCase()).first<{ expires_at: number }>()
+  return !!row && row.expires_at > Date.now()
+}
+
+async function allowed(env: Env, email: string): Promise<boolean> {
+  return isStaff(email, env.ALLOWED_DOMAIN) || isAdmin(email, env.ADMIN_EMAILS) || inviteValid(env, email)
+}
+
+async function currentUser(req: Request, env: Env): Promise<SessionUser | null> {
+  const user = await verifySession(readCookie(req.headers.get('cookie'), 'sess'), secretOf(env))
+  if (!user) return null
+  if (!(await allowed(env, user.email))) return null
+  return user
+}
+
+async function startSession(env: Env, user: Omit<SessionUser, 'exp'>, origin: string) {
+  const token = await signSession({ ...user, exp: Date.now() + SESSION_DAYS * DAY }, secretOf(env))
+  const h = new Headers({ location: `${origin}/` })
+  h.append('set-cookie', cookie('sess', token, SESSION_DAYS * 86400))
+  h.append('set-cookie', cookie('oauth_state', '', 0))
+  return new Response(null, { status: 302, headers: h })
+}
+
+const deny = (origin: string, reason: string, email = '') =>
+  Response.redirect(`${origin}/?login=${reason}${email ? `&email=${encodeURIComponent(email)}` : ''}`, 302)
+
+async function auth(req: Request, env: Env, url: URL): Promise<Response> {
+  const origin = url.origin
+  const redirectUri = `${origin}/auth/callback`
+  if (url.pathname === '/auth/login') {
+    if (!env.GOOGLE_CLIENT_ID) return deny(origin, 'nao-configurado')
+    const state = crypto.randomUUID()
+    const q = new URLSearchParams({
+      client_id: env.GOOGLE_CLIENT_ID,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'openid email profile',
+      state,
+      prompt: 'select_account',
+    })
+    return new Response(null, {
+      status: 302,
+      headers: { location: `https://accounts.google.com/o/oauth2/v2/auth?${q}`, 'set-cookie': cookie('oauth_state', state, 600) },
+    })
+  }
+  if (url.pathname === '/auth/callback') {
+    const state = url.searchParams.get('state')
+    const code = url.searchParams.get('code')
+    if (!code || !state || state !== readCookie(req.headers.get('cookie'), 'oauth_state')) return deny(origin, 'falhou')
+    const tok = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: env.GOOGLE_CLIENT_ID,
+        client_secret: env.GOOGLE_CLIENT_SECRET,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }),
+    })
+    if (!tok.ok) return deny(origin, 'falhou')
+    const { id_token } = (await tok.json()) as { id_token?: string }
+    const claims = id_token ? decodeJwtPayload(id_token) : null
+    const iss = String(claims?.iss ?? '')
+    if (
+      !claims ||
+      claims.aud !== env.GOOGLE_CLIENT_ID ||
+      !['https://accounts.google.com', 'accounts.google.com'].includes(iss) ||
+      claims.email_verified !== true ||
+      typeof claims.email !== 'string'
+    )
+      return deny(origin, 'falhou')
+    const email = claims.email.toLowerCase()
+    await ensureSchema(env)
+    if (!(await allowed(env, email))) return deny(origin, 'nao-liberado', email)
+    return startSession(env, { email, name: String(claims.name ?? ''), picture: String(claims.picture ?? '') }, origin)
+  }
+  if (url.pathname === '/auth/logout') {
+    return new Response(null, { status: 302, headers: { location: `${origin}/`, 'set-cookie': cookie('sess', '', 0) } })
+  }
+  if (url.pathname === '/auth/dev' && env.DEV_LOGIN === '1') {
+    const email = (url.searchParams.get('email') || 'dev@salva.studio').toLowerCase()
+    await ensureSchema(env)
+    if (!(await allowed(env, email))) return deny(origin, 'nao-liberado', email)
+    return startSession(env, { email, name: email.split('@')[0], picture: '' }, origin)
+  }
+  return err(404, 'Rota não encontrada')
+}
+
+interface CutRow {
+  id: string
+  owner: string
+  peca: string
+  summary: string
+  state: string
+  created_at: number
+  updated_at: number
+  expires_at: number
+  last_download_at: number | null
+}
+
+const cutMeta = (r: CutRow) => ({
+  id: r.id,
+  peca: r.peca,
+  summary: JSON.parse(r.summary),
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+  expiresAt: r.expires_at,
+  lastDownloadAt: r.last_download_at,
+})
+
+async function ownCut(env: Env, id: string, owner: string) {
+  return env.DB.prepare('SELECT * FROM cuts WHERE id = ? AND owner = ?').bind(id, owner).first<CutRow>()
+}
+
+function audioKeys(state: string): string[] {
+  try {
+    const s = JSON.parse(state) as { versions?: { audioKey?: string }[] }
+    return (s.versions ?? []).map((v) => v.audioKey).filter((k): k is string => typeof k === 'string')
+  } catch {
+    return []
+  }
+}
+
+async function api(req: Request, env: Env, url: URL): Promise<Response> {
+  await ensureSchema(env)
+  const user = await currentUser(req, env)
+  if (!user) return err(401, 'Faça login para continuar')
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    const o = req.headers.get('origin')
+    if (o && o !== url.origin) return err(403, 'Origem não permitida')
+  }
+  const me = user.email
+  const admin = isAdmin(me, env.ADMIN_EMAILS)
+  const parts = url.pathname.split('/').filter(Boolean).slice(1)
+  const [res, id, sub] = parts
+
+  if (res === 'me' && req.method === 'GET') {
+    return json({ email: me, name: user.name, picture: user.picture, admin, retentionDays: retention(env) / DAY })
+  }
+
+  if (res === 'cuts') {
+    if (!id && req.method === 'GET') {
+      const { results } = await env.DB.prepare(
+        'SELECT * FROM cuts WHERE owner = ? AND expires_at > ? ORDER BY updated_at DESC LIMIT 200',
+      )
+        .bind(me, Date.now())
+        .all<CutRow>()
+      return json(results.map(cutMeta))
+    }
+    if (!id && req.method === 'POST') {
+      const body = (await req.json()) as { peca?: string; summary?: unknown; state?: unknown }
+      const now = Date.now()
+      const cid = crypto.randomUUID()
+      await env.DB.prepare(
+        'INSERT INTO cuts (id, owner, peca, summary, state, created_at, updated_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+        .bind(cid, me, String(body.peca ?? '').slice(0, 200), JSON.stringify(body.summary ?? {}), JSON.stringify(body.state ?? {}), now, now, now + retention(env))
+        .run()
+      return json({ id: cid, expiresAt: now + retention(env) }, 201)
+    }
+    if (!id) return err(405, 'Método não permitido')
+    const row = await ownCut(env, id, me)
+    if (!row || row.expires_at < Date.now()) return err(404, 'Corte não encontrado')
+    if (!sub && req.method === 'GET') return json({ ...cutMeta(row), state: JSON.parse(row.state) })
+    if (!sub && req.method === 'PUT') {
+      const body = (await req.json()) as { peca?: string; summary?: unknown; state?: unknown }
+      const state = JSON.stringify(body.state ?? {})
+      if (state.length > 900_000) return err(413, 'Corte grande demais para salvar')
+      await env.DB.prepare('UPDATE cuts SET peca = ?, summary = ?, state = ?, updated_at = ? WHERE id = ? AND owner = ?')
+        .bind(String(body.peca ?? row.peca).slice(0, 200), JSON.stringify(body.summary ?? {}), state, Date.now(), id, me)
+        .run()
+      const keep = new Set(audioKeys(state))
+      await Promise.all(audioKeys(row.state).filter((k) => !keep.has(k)).map((k) => env.AUDIO.delete(k)))
+      return json({ ok: true })
+    }
+    if (!sub && req.method === 'DELETE') {
+      await Promise.all(audioKeys(row.state).map((k) => env.AUDIO.delete(k)))
+      await env.DB.prepare('DELETE FROM cuts WHERE id = ? AND owner = ?').bind(id, me).run()
+      return json({ ok: true })
+    }
+    if (sub === 'downloaded' && req.method === 'POST') {
+      await env.DB.prepare('UPDATE cuts SET last_download_at = ? WHERE id = ? AND owner = ?').bind(Date.now(), id, me).run()
+      return json({ ok: true })
+    }
+    if (sub === 'audio' && req.method === 'POST') {
+      const len = Number(req.headers.get('content-length') || 0)
+      if (!req.body || !len) return err(400, 'Áudio vazio')
+      if (len > MAX_AUDIO) return err(413, 'Locução grande demais para guardar (limite de 25 MB)')
+      const key = `a/${id}/${crypto.randomUUID()}`
+      const ttl = Math.max(60, Math.floor((row.expires_at - Date.now()) / 1000))
+      await env.AUDIO.put(key, req.body, { expirationTtl: ttl })
+      return json({ key }, 201)
+    }
+    if (sub === 'audio' && req.method === 'GET') {
+      const key = url.searchParams.get('key') || ''
+      if (!key.startsWith(`a/${id}/`)) return err(404, 'Áudio não encontrado')
+      const obj = await env.AUDIO.get(key, 'stream')
+      if (!obj) return err(404, 'Áudio expirado ou não encontrado')
+      return new Response(obj, { headers: { 'content-type': 'audio/wav', 'cache-control': 'private, max-age=3600' } })
+    }
+    return err(405, 'Método não permitido')
+  }
+
+  if (res === 'invites') {
+    if (!admin) return err(403, 'Só administradores podem convidar')
+    if (!id && req.method === 'GET') {
+      const { results } = await env.DB.prepare('SELECT * FROM invites ORDER BY expires_at DESC').all()
+      return json(results)
+    }
+    if (!id && req.method === 'POST') {
+      const body = (await req.json()) as { email?: string; days?: number }
+      const email = String(body.email ?? '').trim().toLowerCase()
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return err(400, 'E-mail inválido')
+      const days = Math.max(1, Math.min(365, Number(body.days) || 30))
+      const now = Date.now()
+      await env.DB.prepare(
+        'INSERT INTO invites (email, expires_at, created_by, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(email) DO UPDATE SET expires_at = excluded.expires_at, created_by = excluded.created_by',
+      )
+        .bind(email, now + days * DAY, me, now)
+        .run()
+      return json({ ok: true }, 201)
+    }
+    if (id && req.method === 'DELETE') {
+      await env.DB.prepare('DELETE FROM invites WHERE email = ?').bind(decodeURIComponent(id).toLowerCase()).run()
+      return json({ ok: true })
+    }
+    return err(405, 'Método não permitido')
+  }
+
+  return err(404, 'Rota não encontrada')
+}
+
+export default {
+  async fetch(req: Request, env: Env): Promise<Response> {
+    const url = new URL(req.url)
+    try {
+      if (url.pathname.startsWith('/auth/')) return await auth(req, env, url)
+      if (url.pathname.startsWith('/api/')) return await api(req, env, url)
+    } catch (e) {
+      console.error(e)
+      return err(500, 'Erro no servidor. Tente de novo.')
+    }
+    return env.ASSETS.fetch(req)
+  },
+
+  async scheduled(_event: ScheduledController, env: Env): Promise<void> {
+    await ensureSchema(env)
+    const now = Date.now()
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM cuts WHERE expires_at < ?').bind(now),
+      env.DB.prepare('DELETE FROM invites WHERE expires_at < ?').bind(now),
+    ])
+  },
+} satisfies ExportedHandler<Env>

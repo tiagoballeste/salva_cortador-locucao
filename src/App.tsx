@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { AudioLines, Check, Ear, LogOut, Keyboard, Magnet, Pause as PauseIcon, Play, Plus, Undo2, Upload, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AudioLines, Check, Ear, Keyboard, Magnet, Pause as PauseIcon, Play, Plus, Undo2, Upload, X } from 'lucide-react'
 import { sortTakes } from './core/takes'
 import { player } from './core/player'
 import { activeVersion, findTake, sources, useStore, type Version } from './store'
@@ -8,6 +8,10 @@ import { TakeList } from './components/TakeList'
 import { Footer } from './components/Footer'
 import { previewEdge } from './components/ZoomTrack'
 import { fmtSec, fmtTime } from './components/draw'
+import { loadAuth } from './api'
+import { newCut } from './cloud'
+import { BackHome, Home } from './components/Home'
+import { Login, SaveIndicator, UserMenu } from './components/Account'
 
 function pickFiles(onFiles: (f: File[]) => void) {
   const inp = document.createElement('input')
@@ -60,7 +64,11 @@ function Empty() {
         <Upload size={28} className="text-accent" aria-hidden />
         <span className="text-[17px] font-medium">Solte as locuções aqui</span>
         <span className="text-fg-2">WAV, MP3 ou M4A. Pode soltar a 30s, a 15s e a 6s juntas.</span>
-        <span className="mt-2 text-[12px] text-fg-3">O áudio não sai do seu computador.</span>
+        <span className="mt-2 text-[12px] text-fg-3">
+          {s.auth.mode === 'user'
+            ? `O corte fica guardado em Meus cortes por ${s.auth.me.retentionDays} dias. Só você vê.`
+            : 'O áudio não sai do seu computador.'}
+        </span>
       </button>
       {s.loading && <p className="mt-4 text-fg-2">{s.loading}</p>}
       {s.error && <p className="mt-4 text-danger">{s.error}</p>}
@@ -138,33 +146,6 @@ function Tabs() {
       <button className="btn btn-ghost btn-sm" onClick={() => pickFiles(s.addFiles)}>
         <Plus size={14} aria-hidden /> Duração
       </button>
-    </div>
-  )
-}
-
-function UserBadge() {
-  const [who, setWho] = useState<{ email: string } | null>(null)
-  useEffect(() => {
-    if (!/^https?:$/.test(location.protocol)) return
-    fetch('/cdn-cgi/access/get-identity', { credentials: 'include' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => {
-        if (j && typeof j.email === 'string') setWho({ email: j.email })
-      })
-      .catch(() => {})
-  }, [])
-  if (!who) return null
-  return (
-    <div className="flex items-center gap-2 text-[12px] text-fg-2" data-testid="user">
-      <span className="grid h-6 w-6 place-items-center rounded-full bg-accent-soft text-[11px] font-semibold text-accent" aria-hidden>
-        {who.email[0]?.toUpperCase()}
-      </span>
-      <span className="max-w-[200px] truncate" title={who.email}>
-        {who.email}
-      </span>
-      <a className="btn btn-ghost btn-sm" href="/cdn-cgi/access/logout" title="Sair da ferramenta">
-        <LogOut size={14} aria-hidden /> Sair
-      </a>
     </div>
   )
 }
@@ -419,10 +400,23 @@ function useShortcuts() {
 
 export default function App() {
   const s = useStore()
-  const over = useDrop(s.addFiles)
+  const onFiles = useCallback((files: File[]) => {
+    const st = useStore.getState()
+    if (st.auth.mode === 'anon' || st.auth.mode === 'loading') return
+    if (st.view === 'home') newCut()
+    void useStore.getState().addFiles(files)
+  }, [])
+  const over = useDrop(onFiles)
   useShortcuts()
+  useEffect(() => {
+    void loadAuth().then((auth) => useStore.setState({ auth, view: auth.mode === 'user' ? 'home' : 'editor' }))
+  }, [])
   const v = activeVersion(s)
   const src = v ? sources.get(v.id) : null
+  const user = s.auth.mode === 'user' ? s.auth.me : null
+
+  if (s.auth.mode === 'loading') return <div className="flex min-h-full items-center justify-center text-fg-3">Carregando…</div>
+  if (s.auth.mode === 'anon') return <Login />
 
   return (
     <div className="flex min-h-full flex-col">
@@ -433,13 +427,15 @@ export default function App() {
             <span className="font-semibold">Cortador de locução</span>
             <span className="rounded bg-panel-3 px-1.5 py-0.5 text-[11px] text-fg-2">Salva</span>
           </div>
+          {user && s.view === 'editor' && <BackHome />}
+          <SaveIndicator />
           <span className="flex-1" />
-          {s.versions.length > 0 && (
+          {s.view === 'editor' && s.versions.length > 0 && (
             <>
               <label className="flex items-center gap-2 text-[12px] text-fg-2">
                 Peça
                 <input
-                  className="field w-[260px] font-mono text-[12px]"
+                  className="field w-[190px] font-mono text-[12px]"
                   value={s.peca}
                   onChange={(e) => s.set({ peca: e.target.value })}
                   data-testid="peca"
@@ -458,14 +454,16 @@ export default function App() {
               </label>
             </>
           )}
-          <button className="btn btn-ghost btn-sm" onClick={() => s.set({ help: true })}>
-            <Keyboard size={14} aria-hidden /> Atalhos <kbd>?</kbd>
+          <button className="btn btn-ghost btn-sm" onClick={() => s.set({ help: true })} title="Atalhos (?)" aria-label="Atalhos">
+            <Keyboard size={15} aria-hidden /> {!user && <>Atalhos <kbd>?</kbd></>}
           </button>
-          <UserBadge />
+          {user && <UserMenu me={user} />}
         </div>
       </header>
 
-      {!v || !src ? (
+      {user && s.view === 'home' ? (
+        <Home />
+      ) : !v || !src ? (
         <Empty />
       ) : (
         <main className="mx-auto w-full max-w-[1180px] flex-1 px-6 pt-5 pb-10">

@@ -6,6 +6,7 @@ import {
   suggestNext, takesFromAnalysis, togglePause, type Take,
 } from './core/takes'
 import { player } from './core/player'
+import type { AuthState } from './api'
 
 export interface Source {
   audio: PcmAudio
@@ -21,7 +22,10 @@ export interface Version {
   label: string
   fileName: string
   takes: Take[]
+  audioKey?: string
 }
+
+export const hooks: { afterAdd: ((added: Version[]) => Promise<void>) | null } = { afterAdd: null }
 
 type Snapshot = Record<string, Take[]>
 
@@ -31,7 +35,13 @@ export interface Toast {
   undo?: boolean
 }
 
+export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
+
 interface State {
+  auth: AuthState
+  view: 'home' | 'editor'
+  cutId: string | null
+  saveStatus: SaveStatus
   versions: Version[]
   activeId: string | null
   openId: string | null
@@ -92,8 +102,8 @@ export const findTake = (s: Pick<State, 'versions'>, id: string | null) => {
   return null
 }
 
-async function decode(file: File): Promise<PcmAudio> {
-  const buf = await file.arrayBuffer()
+export async function decode(file: File | ArrayBuffer): Promise<PcmAudio> {
+  const buf = file instanceof ArrayBuffer ? file : await file.arrayBuffer()
   if (isWav(buf)) {
     try {
       return parseWav(buf)
@@ -110,6 +120,10 @@ async function decode(file: File): Promise<PcmAudio> {
 let toastId = 0
 
 export const useStore = create<State>((set, get) => ({
+  auth: { mode: 'loading' },
+  view: 'editor',
+  cutId: null,
+  saveStatus: 'idle',
   versions: [],
   activeId: null,
   openId: null,
@@ -176,6 +190,7 @@ export const useStore = create<State>((set, get) => ({
       const v = activeVersion(get())
       if (v) set({ openId: sortTakes(v.takes)[0]?.id ?? null })
     }
+    if (hooks.afterAdd) await hooks.afterAdd(added)
   },
 
   setActive: (id) => {

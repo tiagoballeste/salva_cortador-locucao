@@ -2,8 +2,24 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "salva-cortador-locucao",
   "compatibility_date": "2026-10-01",
+  "main": "worker/index.ts",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
-  }
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/auth/*"]
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "cortador-db", "database_id": "97ef7d13-2e17-4efc-809e-e9cff0c5ea23" }
+  ],
+  "kv_namespaces": [
+    { "binding": "AUDIO", "id": "fe496024f6a44ffea29116b9c2a3cfad" }
+  ],
+  "vars": {
+    "ALLOWED_DOMAIN": "salva.studio",
+    "ADMIN_EMAILS": "tiago@salva.studio,tiagoprado000@gmail.com",
+    "RETENTION_DAYS": "90"
+  },
+  "triggers": { "crons": ["17 9 * * *"] },
+  "observability": { "enabled": true }
 }
