@@ -63,7 +63,7 @@ describe.skipIf(!has30)('locução real SO_AMANHA 30s', () => {
     const opts = { peca: 'SO_AMANHA', versao: 1, mono: true, padBefore: 0, padAfter: 0, folders: true }
     const jobs = planExport([{ label: '30s', audio, takes }], null, opts)
     expect(jobs.length).toBe(7)
-    expect(jobs[0].path).toBe('30s/SO_AMANHA_30s_T01_v01')
+    expect(jobs[0].path).toBe('30s/T01_SO_AMANHA_30s_v01')
     const wav = parseWav(renderWav(jobs[1], opts).buffer as ArrayBuffer)
     expect(wav.channels.length).toBe(1)
     expect(wav.bitDepth).toBe(24)
@@ -82,7 +82,7 @@ describe('nomes', () => {
     expect(durationLabelFromSeconds(14.8)).toBe('15s')
     expect(pecaFromName(NAME)).toBe('ML_SO_AMANHA_So_Amanha_Black')
     expect(fileBase({ peca: 'SO AMANHÃ', duracao: '15s', index: 2, text: 'Só amanhã, corre pro app!', versao: 2 }))
-      .toBe('SO_AMANHA_15s_T03_so-amanha-corre-pro_v02')
+      .toBe('T03_SO_AMANHA_15s_so-amanha-corre-pro_v02')
   })
 })
 

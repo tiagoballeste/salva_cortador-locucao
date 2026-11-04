@@ -130,7 +130,7 @@ export interface NameParts {
 }
 
 export function fileBase(p: NameParts): string {
-  const parts = [cleanToken(p.peca), cleanToken(p.duracao), takeLabel(p.index)]
+  const parts = [takeLabel(p.index), cleanToken(p.peca), cleanToken(p.duracao)]
   const sl = slugify(p.text)
   if (sl) parts.push(sl)
   parts.push(`v${String(p.versao).padStart(2, '0')}`)
