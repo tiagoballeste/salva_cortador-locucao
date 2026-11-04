@@ -13,7 +13,7 @@ const b64url = (bytes: Uint8Array) => {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-const fromB64url = (s: string) => {
+export const fromB64url = (s: string) => {
   const pad = s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)
   const bin = atob(pad)
   return Uint8Array.from(bin, (c) => c.charCodeAt(0))

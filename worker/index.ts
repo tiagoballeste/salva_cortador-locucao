@@ -1,13 +1,13 @@
 import {
-  cookie, decodeJwtPayload, isAdmin, isStaff, readCookie, signSession, signState, verifySession, verifyState, type SessionUser,
+  cookie, isAdmin, isStaff, readCookie, signSession, signState, verifySession, verifyState, type SessionUser,
 } from './session'
+import { verifyGoogleIdToken } from './google'
 
 export interface Env {
   ASSETS: Fetcher
   DB: D1Database
   AUDIO: KVNamespace
   GOOGLE_CLIENT_ID: string
-  GOOGLE_CLIENT_SECRET: string
   ALLOWED_DOMAIN: string
   ADMIN_EMAILS: string
   RETENTION_DAYS?: string
@@ -21,7 +21,6 @@ const MAX_AUDIO = 25 * 1024 * 1024
 const json = (data: unknown, status = 200, headers: HeadersInit = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } })
 const err = (status: number, message: string) => json({ error: message }, status)
-const secretOf = (env: Env) => env.GOOGLE_CLIENT_SECRET || (env.DEV_LOGIN === '1' ? 'dev-secret' : '')
 const retention = (env: Env) => Math.max(1, Number(env.RETENTION_DAYS || 90)) * DAY
 
 let schemaReady: Promise<unknown> | null = null
@@ -33,6 +32,7 @@ function ensureSchema(env: Env) {
         created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_download_at INTEGER)`,
     ),
     env.DB.prepare('CREATE INDEX IF NOT EXISTS cuts_owner ON cuts(owner, updated_at DESC)'),
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)'),
     env.DB.prepare(
       `CREATE TABLE IF NOT EXISTS invites (
         email TEXT PRIMARY KEY, expires_at INTEGER NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL)`,
@@ -42,6 +42,24 @@ function ensureSchema(env: Env) {
     throw e
   })
   return schemaReady
+}
+
+let keyCache: Promise<string> | null = null
+function secretOf(env: Env): Promise<string> {
+  keyCache ??= (async () => {
+    await ensureSchema(env)
+    const read = () => env.DB.prepare("SELECT value FROM settings WHERE key = 'session_key'").first<{ value: string }>()
+    const row = await read()
+    if (row) return row.value
+    const bytes = crypto.getRandomValues(new Uint8Array(32))
+    const k = btoa(String.fromCharCode(...bytes))
+    await env.DB.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('session_key', ?)").bind(k).run()
+    return (await read())!.value
+  })().catch((e) => {
+    keyCache = null
+    throw e
+  })
+  return keyCache
 }
 
 async function inviteValid(env: Env, email: string): Promise<boolean> {
@@ -54,14 +72,14 @@ async function allowed(env: Env, email: string): Promise<boolean> {
 }
 
 async function currentUser(req: Request, env: Env): Promise<SessionUser | null> {
-  const user = await verifySession(readCookie(req.headers.get('cookie'), 'sess'), secretOf(env))
+  const user = await verifySession(readCookie(req.headers.get('cookie'), 'sess'), await secretOf(env))
   if (!user) return null
   if (!(await allowed(env, user.email))) return null
   return user
 }
 
 async function startSession(env: Env, user: Omit<SessionUser, 'exp'>, origin: string) {
-  const token = await signSession({ ...user, exp: Date.now() + SESSION_DAYS * DAY }, secretOf(env))
+  const token = await signSession({ ...user, exp: Date.now() + SESSION_DAYS * DAY }, await secretOf(env))
   const h = new Headers({ location: `${origin}/` })
   h.append('set-cookie', cookie('sess', token, SESSION_DAYS * 86400))
   return new Response(null, { status: 302, headers: h })
@@ -75,71 +93,42 @@ const deny = (origin: string, reason: string, email = '', detail = '') => {
   return Response.redirect(`${origin}/?${q}`, 302)
 }
 
-async function auth(_req: Request, env: Env, url: URL): Promise<Response> {
+async function auth(req: Request, env: Env, url: URL): Promise<Response> {
   const origin = url.origin
   const redirectUri = `${origin}/auth/callback`
   if (url.pathname === '/auth/login') {
     if (!env.GOOGLE_CLIENT_ID) return deny(origin, 'nao-configurado', '', 'sem-client-id')
-    if (!env.GOOGLE_CLIENT_SECRET) return deny(origin, 'nao-configurado', '', 'sem-secret')
-    const state = await signState(secretOf(env))
+    const state = await signState(await secretOf(env))
     const q = new URLSearchParams({
       client_id: env.GOOGLE_CLIENT_ID,
       redirect_uri: redirectUri,
-      response_type: 'code',
+      response_type: 'id_token',
+      response_mode: 'form_post',
       scope: 'openid email profile',
       state,
+      nonce: state,
       prompt: 'select_account',
     })
-    return new Response(null, {
-      status: 302,
-      headers: { location: `https://accounts.google.com/o/oauth2/v2/auth?${q}` },
-    })
+    return new Response(null, { status: 302, headers: { location: `https://accounts.google.com/o/oauth2/v2/auth?${q}` } })
   }
   if (url.pathname === '/auth/callback') {
-    const state = url.searchParams.get('state')
-    const code = url.searchParams.get('code')
-    const gErr = url.searchParams.get('error')
+    let params: URLSearchParams
+    if (req.method === 'POST') {
+      const form = await req.formData()
+      params = new URLSearchParams()
+      for (const [k, v] of form.entries()) if (typeof v === 'string') params.set(k, v)
+    } else params = url.searchParams
+    const gErr = params.get('error')
     if (gErr) return deny(origin, 'falhou', '', `google:${gErr}`)
-    if (!code || !state) return deny(origin, 'falhou', '', 'sem-codigo')
-    if (!env.GOOGLE_CLIENT_SECRET) return deny(origin, 'nao-configurado', '', 'sem-secret')
-    if (!(await verifyState(state, secretOf(env)))) return deny(origin, 'falhou', '', 'estado')
-    const tok = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        code,
-        client_id: env.GOOGLE_CLIENT_ID,
-        client_secret: env.GOOGLE_CLIENT_SECRET,
-        redirect_uri: redirectUri,
-        grant_type: 'authorization_code',
-      }),
-    })
-    if (!tok.ok) {
-      const body = await tok.text()
-      let code = `token-${tok.status}`
-      try {
-        code += `:${(JSON.parse(body) as { error?: string }).error ?? ''}`
-      } catch {
-        /* resposta sem JSON */
-      }
-      console.warn('troca de código falhou', tok.status, body.slice(0, 300))
-      return deny(origin, 'falhou', '', code)
-    }
-    const { id_token } = (await tok.json()) as { id_token?: string }
-    const claims = id_token ? decodeJwtPayload(id_token) : null
-    const iss = String(claims?.iss ?? '')
-    if (
-      !claims ||
-      claims.aud !== env.GOOGLE_CLIENT_ID ||
-      !['https://accounts.google.com', 'accounts.google.com'].includes(iss) ||
-      claims.email_verified !== true ||
-      typeof claims.email !== 'string'
-    )
-      return deny(origin, 'falhou', '', `claims:${String(claims?.aud ?? '').slice(0, 12)}:${iss}:${String(claims?.email_verified)}`)
-    const email = claims.email.toLowerCase()
+    const state = params.get('state')
+    const idToken = params.get('id_token')
+    if (!idToken || !state) return deny(origin, 'falhou', '', 'sem-token')
+    if (!(await verifyState(state, await secretOf(env)))) return deny(origin, 'falhou', '', 'estado')
+    const result = await verifyGoogleIdToken(idToken, env.GOOGLE_CLIENT_ID, state)
+    if (typeof result === 'string') return deny(origin, 'falhou', '', `token:${result}`)
     await ensureSchema(env)
-    if (!(await allowed(env, email))) return deny(origin, 'nao-liberado', email)
-    return startSession(env, { email, name: String(claims.name ?? ''), picture: String(claims.picture ?? '') }, origin)
+    if (!(await allowed(env, result.email))) return deny(origin, 'nao-liberado', result.email)
+    return startSession(env, { email: result.email, name: result.name ?? '', picture: result.picture ?? '' }, origin)
   }
   if (url.pathname === '/auth/logout') {
     return new Response(null, { status: 302, headers: { location: `${origin}/`, 'set-cookie': cookie('sess', '', 0) } })
