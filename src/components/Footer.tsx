@@ -28,7 +28,7 @@ async function save(data: Uint8Array, name: string, type: string): Promise<boole
     let payload = data
     if (!ALLOWED.test(name)) {
       payload = zipFiles({ [name]: data })
-      filename = name.replace(/\.[^.]+$/, '') + '.zip'
+      filename = 'CUT_' + name.replace(/\.[^.]+$/, '') + '.zip'
     }
     try {
       await cap.save({ filename, data: new Blob([payload as Uint8Array<ArrayBuffer>], { type: 'application/zip' }) })
@@ -125,7 +125,7 @@ export function Footer() {
       const labels = [...new Set(jobs.map((j) => j.version.label))]
       const scopeName = labels.length > 1 ? 'todas' : cleanToken(labels[0])
       setProgress(null)
-      const ok = await save(zip, `${cleanToken(s.peca) || 'takes'}_${scopeName}_v${String(s.versao).padStart(2, '0')}.zip`, 'application/zip')
+      const ok = await save(zip, `CUT_${cleanToken(s.peca) || 'takes'}_${scopeName}_v${String(s.versao).padStart(2, '0')}.zip`, 'application/zip')
       if (ok) {
         s.showToast(`${n} arquivos no zip, com a planilha de takes`)
         void markDownloaded()
