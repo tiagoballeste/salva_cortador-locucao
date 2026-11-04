@@ -32,6 +32,9 @@ export function Login() {
         </a>
         {msg && <p className="mt-4 text-[13px] text-danger">{msg}</p>}
         <p className="mt-6 text-[12px] text-fg-3">Use seu e-mail @salva.studio. Freelancers entram com o e-mail que foi liberado.</p>
+        <a href="/privacidade" className="mt-2 inline-block text-[12px] text-fg-3 underline hover:text-fg-2">
+          Política de privacidade
+        </a>
       </div>
     </div>
   )
