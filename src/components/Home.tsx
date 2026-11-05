@@ -160,7 +160,7 @@ export function Home() {
 
 export function BackHome() {
   return (
-    <button className="btn btn-ghost btn-sm" onClick={() => void goHome()} data-testid="back-home">
+    <button className="btn btn-ghost btn-sm shrink-0 whitespace-nowrap" onClick={() => void goHome()} data-testid="back-home">
       ← Meus cortes
     </button>
   )

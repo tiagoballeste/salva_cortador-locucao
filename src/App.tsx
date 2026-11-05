@@ -446,8 +446,8 @@ export default function App() {
   return (
     <div className="flex min-h-full flex-col">
       <header className="border-b border-line">
-        <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-4 px-6 py-3">
-          <div className="flex items-center gap-2">
+        <div className="mx-auto flex h-14 max-w-[1180px] flex-nowrap items-center gap-3 px-6" data-testid="header-row">
+          <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
             <AudioLines size={18} className="text-accent" aria-hidden />
             <span className="font-semibold tracking-tight">LoCut</span>
             <span className="rounded bg-panel-3 px-1.5 py-0.5 text-[11px] text-fg-2">Salva</span>
@@ -457,19 +457,20 @@ export default function App() {
           <span className="flex-1" />
           {s.view === 'editor' && s.versions.length > 0 && (
             <>
-              <label className="flex items-center gap-2 text-[12px] text-fg-2">
+              <label className="flex min-w-0 shrink items-center gap-2 text-[12px] whitespace-nowrap text-fg-2">
                 Peça
                 <input
-                  className="field w-[190px] font-mono text-[12px]"
+                  className="field w-[190px] min-w-[80px] shrink font-mono text-[12px]"
+                  title={s.peca}
                   value={s.peca}
                   onChange={(e) => s.set({ peca: e.target.value })}
                   data-testid="peca"
                 />
               </label>
-              <label className="flex items-center gap-2 text-[12px] text-fg-2">
+              <label className="flex shrink-0 items-center gap-2 text-[12px] whitespace-nowrap text-fg-2">
                 Versão
                 <input
-                  className="field w-[64px] font-mono text-[12px]"
+                  className="field w-[56px] font-mono text-[12px]"
                   type="number"
                   min={1}
                   max={99}
@@ -479,7 +480,7 @@ export default function App() {
               </label>
             </>
           )}
-          <button className="btn btn-ghost btn-sm" onClick={() => s.set({ help: true })} title="Atalhos (?)" aria-label="Atalhos">
+          <button className="btn btn-ghost btn-sm shrink-0 whitespace-nowrap" onClick={() => s.set({ help: true })} title="Atalhos (?)" aria-label="Atalhos">
             <Keyboard size={15} aria-hidden /> {!user && <>Atalhos <kbd>?</kbd></>}
           </button>
           {user && <UserMenu me={user} />}

@@ -53,7 +53,7 @@ export function SaveIndicator() {
     error: { icon: <CloudOff size={14} aria-hidden />, text: 'Não salvou', cls: 'text-danger' },
   }[st]
   return (
-    <span className={`flex items-center gap-1.5 text-[12px] ${map.cls}`} data-testid="save-status" title="Seus cortes salvam sozinhos">
+    <span className={`flex w-[92px] shrink-0 items-center gap-1.5 text-[12px] whitespace-nowrap ${map.cls}`} data-testid="save-status" title="Seus cortes salvam sozinhos">
       {map.icon} {map.text}
     </span>
   )
@@ -62,7 +62,7 @@ export function SaveIndicator() {
 export function UserMenu({ me }: { me: Me }) {
   const [invites, setInvites] = useState(false)
   return (
-    <div className="flex items-center gap-2 text-[12px] text-fg-2" data-testid="user">
+    <div className="flex shrink-0 items-center gap-2 text-[12px] whitespace-nowrap text-fg-2" data-testid="user">
       {me.admin && (
         <button className="btn btn-ghost btn-sm" onClick={() => setInvites(true)} data-testid="open-invites" title="Equipe e acessos" aria-label="Equipe e acessos">
           <Users size={15} aria-hidden />
@@ -75,7 +75,7 @@ export function UserMenu({ me }: { me: Me }) {
           {me.email[0]?.toUpperCase()}
         </span>
       )}
-      <span className="max-w-[150px] truncate" title={me.email}>
+      <span className="hidden max-w-[150px] truncate lg:inline" title={me.email}>
         {me.email}
       </span>
       <a className="btn btn-ghost btn-sm" href="/auth/logout" title="Sair da ferramenta">
