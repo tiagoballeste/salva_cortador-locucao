@@ -382,10 +382,10 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
 }
 
 const PRIVACY = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Política de privacidade · Cortador de locução</title>
+<title>Política de privacidade · LoCut</title>
 <style>body{font:15px/1.65 system-ui,sans-serif;max-width:680px;margin:48px auto;padding:0 20px;color:#1d1d21}h1{font-size:22px}h2{font-size:16px;margin-top:28px}a{color:#6d5ce8}</style></head><body>
 <h1>Política de privacidade</h1>
-<p>O Cortador de locução é uma ferramenta interna da Salva (salva.studio) para dividir locuções em takes. Esta página explica quais dados ela usa.</p>
+<p>O LoCut é o cortador de locução, uma ferramenta interna da Salva (salva.studio) para dividir locuções em takes. Esta página explica quais dados ela usa.</p>
 <h2>O que coletamos</h2>
 <p>Ao entrar com Google, recebemos apenas seu nome, e-mail e foto de perfil. Não acessamos Gmail, Drive, contatos nem qualquer outro dado da sua conta Google.</p>
 <p>Também guardamos as locuções que você envia e as decisões de corte (pontos de corte, revisões, nomes dos arquivos).</p>

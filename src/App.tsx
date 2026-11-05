@@ -449,7 +449,7 @@ export default function App() {
         <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-4 px-6 py-3">
           <div className="flex items-center gap-2">
             <AudioLines size={18} className="text-accent" aria-hidden />
-            <span className="font-semibold">Cortador de locução</span>
+            <span className="font-semibold tracking-tight">LoCut</span>
             <span className="rounded bg-panel-3 px-1.5 py-0.5 text-[11px] text-fg-2">Salva</span>
           </div>
           {user && s.view === 'editor' && <BackHome />}
