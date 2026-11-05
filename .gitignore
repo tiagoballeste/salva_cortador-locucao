@@ -25,3 +25,4 @@ dist-ssr
 tests/fixtures/*.wav
 .wrangler
 .dev.vars
+wrangler.local.jsonc

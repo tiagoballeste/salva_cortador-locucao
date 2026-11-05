@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, Ear, Merge, Pause as PauseIcon, Play, Scissors, Trash2 } from 'lucide-react'
+import { Check, Copy, Ear, Merge, Pause as PauseIcon, Play, Scissors, Trash2 } from 'lucide-react'
 import { fileBase, sortTakes, takeLabel, type Take } from '../core/takes'
+import { takeSpeech, wordsIn } from '../core/transcript'
 import { player } from '../core/player'
 import { sources, useStore, type Version } from '../store'
 import { ZoomTrack, previewEdge } from './ZoomTrack'
@@ -76,6 +77,8 @@ function TakePanel({ version, take, index }: { version: Version; take: Take; ind
   const dur = sources.get(version.id)!.audio.duration
   const textRef = useRef<HTMLInputElement>(null)
   const isLast = index === version.takes.length - 1
+  const auto = wordsIn(take, version.words)
+  const speech = take.text.trim() || auto
   return (
     <div className="border-b border-line bg-panel-2 px-4 pt-4 pb-4" data-testid="panel">
       <ZoomTrack version={version} take={take} />
@@ -105,19 +108,35 @@ function TakePanel({ version, take, index }: { version: Version; take: Take; ind
         <input
           ref={textRef}
           className="field min-w-[240px] flex-1"
-          placeholder="Fala deste take (opcional, entra no nome do arquivo)"
-          defaultValue={take.text}
-          key={take.id + take.text}
+          placeholder={version.transcript === 'pending' ? 'Transcrevendo…' : 'Fala deste take'}
+          defaultValue={speech}
+          key={take.id + speech}
           onFocus={() => s.commit()}
           onBlur={(e) => {
-            if (e.target.value !== take.text) s.patchTake(take.id, { text: e.target.value }, { commit: false })
+            const v = e.target.value.trim()
+            const next = v === auto ? '' : v
+            if (next !== take.text) s.patchTake(take.id, { text: next }, { commit: false })
             else useStore.setState((st) => ({ past: st.past.slice(0, -1) }))
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
           }}
           aria-label="Fala deste take"
+          data-testid="speech"
         />
+        <button
+          className="btn btn-sm"
+          onClick={() => {
+            void navigator.clipboard?.writeText(speech).then(
+              () => s.showToast('Fala copiada'),
+              () => s.showToast('Não consegui copiar'),
+            )
+          }}
+          title="Copiar a fala deste take"
+          disabled={!speech}
+        >
+          <Copy size={14} aria-hidden /> Copiar
+        </button>
         <button className="btn btn-sm" onClick={() => s.splitAtPlayhead(take.id)} title="Dividir no playhead (S)">
           <Scissors size={14} aria-hidden /> Dividir no playhead
         </button>
@@ -186,8 +205,8 @@ export function TakeList({ version }: { version: Version }) {
                 title="Selecionar para download"
               />
               <span className="w-8 flex-none font-mono text-[12px] font-semibold">{takeLabel(i)}</span>
-              <span className={`min-w-0 flex-1 truncate text-[13px] ${t.text ? '' : 'text-fg-3'}`}>
-                {t.text || 'Sem fala'}
+              <span className={`min-w-0 flex-1 truncate text-[13px] ${takeSpeech(t, version.words) ? '' : 'text-fg-3'}`} data-testid="row-speech">
+                {takeSpeech(t, version.words) || (version.transcript === 'pending' ? 'Transcrevendo…' : 'Sem fala')}
               </span>
               <Status take={t} />
               <span className="w-12 flex-none text-right font-mono text-[12px] text-fg-2">{fmtSec(t.b - t.a)}</span>

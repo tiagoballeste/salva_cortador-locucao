@@ -7,6 +7,8 @@ export interface Env {
   ASSETS: Fetcher
   DB: D1Database
   AUDIO: KVNamespace
+  AI?: Ai
+  DEV_FAKE_TRANSCRIBE?: string
   GOOGLE_CLIENT_ID: string
   ALLOWED_DOMAIN: string
   ADMIN_EMAILS: string
@@ -292,6 +294,38 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
       return new Response(obj, { headers: { 'content-type': 'audio/wav', 'cache-control': 'private, max-age=3600' } })
     }
     return err(405, 'Método não permitido')
+  }
+
+  if (res === 'transcribe' && req.method === 'POST') {
+    const len = Number(req.headers.get('content-length') || 0)
+    if (!req.body || !len) return err(400, 'Áudio vazio')
+    if (len > 12 * 1024 * 1024) return err(413, 'Áudio grande demais para transcrever')
+    if (env.DEV_FAKE_TRANSCRIBE === '1') {
+      const secs = (len - 44) / 32000
+      const n = Math.max(1, Math.floor(secs * 2.5))
+      return json({ text: 'fala de teste', words: Array.from({ length: n }, (_, i) => ({ w: `palavra${i + 1}`, s: (i / n) * secs, e: ((i + 0.8) / n) * secs })) })
+    }
+    if (!env.AI) return err(503, 'Transcrição indisponível neste servidor')
+    try {
+      const out = await env.AI.run('@cf/openai/whisper-large-v3-turbo', {
+        audio: { body: req.body, contentType: 'audio/wav' },
+        language: 'pt',
+        task: 'transcribe',
+        initial_prompt: 'Magalu, Lu do Magalu, Black das Blacks, Black Friday, app do Magalu.',
+        condition_on_previous_text: false,
+      })
+      const words = (out.segments ?? []).flatMap((sg) =>
+        (sg.words ?? [])
+          .filter((w) => typeof w.word === 'string' && typeof w.start === 'number' && typeof w.end === 'number')
+          .map((w) => ({ w: w.word!, s: w.start!, e: w.end! })),
+      )
+      return json({ text: out.text ?? '', words })
+    } catch (e) {
+      const m = String((e as Error).message || e)
+      console.warn('transcrição falhou', m)
+      if (/limit|quota|neuron|429|exceed/i.test(m)) return err(429, 'A cota diária de transcrição acabou. Ela volta amanhã às 21h.')
+      return err(502, 'A transcrição falhou. Tente de novo.')
+    }
   }
 
   if (res === 'users' && req.method === 'GET') {

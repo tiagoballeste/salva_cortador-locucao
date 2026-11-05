@@ -1,4 +1,5 @@
 import type { Take } from './core/takes'
+import type { Word } from './core/transcript'
 
 export interface Me {
   email: string
@@ -30,6 +31,7 @@ export interface SavedVersion {
   fileName: string
   audioKey: string
   takes: Take[]
+  words?: Word[]
 }
 
 export interface CutState {
@@ -115,6 +117,12 @@ export const api = {
     if (!r.ok) throw new ApiError(r.status, r.status === 404 ? 'O áudio deste corte expirou ou foi apagado.' : `Erro ${r.status}`)
     return r.arrayBuffer()
   },
+  transcribe: (wav: Uint8Array) =>
+    call<{ text: string; words: Word[] }>('/api/transcribe', {
+      method: 'POST',
+      headers: { 'content-type': 'audio/wav' },
+      body: new Blob([wav as Uint8Array<ArrayBuffer>], { type: 'audio/wav' }),
+    }),
   listUsers: () => call<UserRow[]>('/api/users'),
   listInvites: () => call<Invite[]>('/api/invites'),
   addInvite: (email: string, days: number) => call<{ ok: true }>('/api/invites', jsonInit('POST', { email, days })),

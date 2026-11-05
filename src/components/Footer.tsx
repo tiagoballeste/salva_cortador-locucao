@@ -4,6 +4,7 @@ import { planExport, renderMp4, renderWav, sheet, zipFiles, type ExportJob, type
 import { cleanToken } from '../core/takes'
 import { activeVersion, sources, useStore } from '../store'
 import { markDownloaded } from '../cloud'
+import { takeSpeech } from '../core/transcript'
 
 type Downloads = { save: (r: { filename: string; data: Blob | Uint8Array }) => Promise<unknown> }
 let dlCap: Promise<Downloads | null> | null = null
@@ -77,7 +78,11 @@ export function Footer() {
     const sel = onlySelected ? new Set(selIds) : null
     const exportVersions = scopeVersions
       .filter((x) => !sel || x.takes.some((t) => sel.has(t.id)))
-      .map((x) => ({ label: x.label, audio: sources.get(x.id)!.audio, takes: x.takes }))
+      .map((x) => ({
+        label: x.label,
+        audio: sources.get(x.id)!.audio,
+        takes: x.takes.map((t) => ({ ...t, text: takeSpeech(t, x.words) })),
+      }))
     opts.folders = exportVersions.length > 1
     const jobs = planExport(exportVersions, sel, opts)
     const pending = jobs.filter((j) => !j.take.reviewed).length

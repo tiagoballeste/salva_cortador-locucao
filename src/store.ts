@@ -8,6 +8,7 @@ import {
 import { player } from './core/player'
 import type { AuthState } from './api'
 import type { Aspect } from './core/mp4'
+import type { Word } from './core/transcript'
 
 export interface Source {
   audio: PcmAudio
@@ -24,6 +25,8 @@ export interface Version {
   fileName: string
   takes: Take[]
   audioKey?: string
+  words?: Word[]
+  transcript?: 'pending' | 'error'
 }
 
 export const hooks: { afterAdd: ((added: Version[]) => Promise<void>) | null } = { afterAdd: null }

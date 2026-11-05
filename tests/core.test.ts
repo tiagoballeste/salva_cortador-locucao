@@ -82,7 +82,7 @@ describe('nomes', () => {
     expect(durationLabelFromSeconds(14.8)).toBe('15s')
     expect(pecaFromName(NAME)).toBe('ML_SO_AMANHA_So_Amanha_Black')
     expect(fileBase({ peca: 'SO AMANHÃ', duracao: '15s', index: 2, text: 'Só amanhã, corre pro app!', versao: 2 }))
-      .toBe('T03_SO_AMANHA_15s_so-amanha-corre-pro_v02')
+      .toBe('T03_SO_AMANHA_15s_v02')
   })
 })
 
@@ -110,5 +110,26 @@ describe('silence handle', () => {
     expect(Math.max(...wav.channels[0].slice(sr * 2).map(Math.abs))).toBe(0)
     expect(Math.max(...wav.channels[0].slice(sr, sr * 2).map(Math.abs))).toBeGreaterThan(0.4)
     expect(sheet([job], opts)).toContain(';1,000;3,000;sim')
+  })
+})
+
+import { takeSpeech, wordsIn } from '../src/core/transcript'
+describe('falas por take', () => {
+  const words = [
+    { w: ' Chegou', s: 0.1, e: 0.5 },
+    { w: ' a', s: 0.5, e: 0.6 },
+    { w: ' Black', s: 0.6, e: 1.0 },
+    { w: ' Corre', s: 5.6, e: 6.0 },
+    { w: ' pro', s: 6.0, e: 6.2 },
+    { w: ' app', s: 8.3, e: 8.7 },
+  ]
+  it('pega as palavras que caem dentro do take', () => {
+    expect(wordsIn({ a: 0, b: 3.2 }, words)).toBe('Chegou a Black')
+    expect(wordsIn({ a: 5.4, b: 9.3 }, words)).toBe('Corre pro app')
+    expect(wordsIn({ a: 5.4, b: 7.5 }, words)).toBe('Corre pro')
+  })
+  it('texto digitado vence a transcrição', () => {
+    expect(takeSpeech({ id: 'x', a: 0, b: 3, text: 'Chegou a Black das Blacks', reviewed: false }, words)).toBe('Chegou a Black das Blacks')
+    expect(takeSpeech({ id: 'x', a: 0, b: 3, text: '', reviewed: false }, words)).toBe('Chegou a Black')
   })
 })

@@ -3,6 +3,7 @@ import { analyze, mixMono, snapPoints } from './core/analysis'
 import { player } from './core/player'
 import { sortTakes } from './core/takes'
 import { encodeWav, isDualMono } from './core/wav'
+import { wavForTranscription } from './core/transcript'
 import { decode, hooks, sources, useStore, type Version } from './store'
 
 const online = () => useStore.getState().auth.mode === 'user'
@@ -19,7 +20,14 @@ function stateOf(): CutState | null {
   const s = useStore.getState()
   if (s.versions.some((v) => !v.audioKey)) return null
   return {
-    versions: s.versions.map((v) => ({ id: v.id, label: v.label, fileName: v.fileName, audioKey: v.audioKey!, takes: v.takes })),
+    versions: s.versions.map((v) => ({
+      id: v.id,
+      label: v.label,
+      fileName: v.fileName,
+      audioKey: v.audioKey!,
+      takes: v.takes,
+      ...(v.words ? { words: v.words } : {}),
+    })),
     versao: s.versao,
     mono: s.mono,
     handles: s.handles,
@@ -64,6 +72,7 @@ hooks.afterAdd = async (added) => {
     }
     useStore.setState({ loading: null })
     await saveNow()
+    for (const v of added) await transcribeVersion(v.id)
   } catch (e) {
     useStore.setState({ loading: null, saveStatus: 'error' })
     st.showToast(`Não consegui guardar a locução: ${(e as Error).message}`)
@@ -163,7 +172,7 @@ export async function openCut(id: string) {
       const audio = await decode(await api.getAudio(id, v.audioKey))
       const analysis = analyze(audio.channels, audio.sampleRate)
       sources.set(v.id, { audio, mono: mixMono(audio.channels), analysis, snaps: snapPoints(analysis, audio.duration) })
-      versions.push({ id: v.id, label: v.label, fileName: v.fileName, takes: v.takes, audioKey: v.audioKey })
+      versions.push({ id: v.id, label: v.label, fileName: v.fileName, takes: v.takes, audioKey: v.audioKey, words: v.words })
     }
     const first = versions[0]
     useStore.setState({
@@ -180,10 +189,28 @@ export async function openCut(id: string) {
       saveStatus: 'saved',
       loading: null,
     })
+    for (const v of versions) if (!v.words) void transcribeVersion(v.id)
   } catch (e) {
     resetEditor()
     useStore.setState({ view: 'home' })
     useStore.getState().showToast(`Não consegui abrir o corte: ${(e as Error).message}`)
+  }
+}
+
+const patchVersion = (id: string, patch: Partial<Version>) =>
+  useStore.setState((s) => ({ versions: s.versions.map((v) => (v.id === id ? { ...v, ...patch } : v)) }))
+
+export async function transcribeVersion(id: string) {
+  if (!online()) return
+  const src = sources.get(id)
+  if (!src) return
+  patchVersion(id, { transcript: 'pending' })
+  try {
+    const r = await api.transcribe(await wavForTranscription(src.audio))
+    patchVersion(id, { words: r.words, transcript: undefined })
+  } catch (e) {
+    patchVersion(id, { transcript: 'error' })
+    useStore.getState().showToast((e as Error).message)
   }
 }
 

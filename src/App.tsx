@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AudioLines, Check, Ear, Keyboard, Magnet, Pause as PauseIcon, Play, Plus, Undo2, Upload, X } from 'lucide-react'
+import { AudioLines, Check, Copy, Ear, Keyboard, Magnet, Pause as PauseIcon, Play, Plus, Undo2, Upload, X } from 'lucide-react'
 import { sortTakes } from './core/takes'
 import { player } from './core/player'
 import { activeVersion, findTake, sources, useStore, type Version } from './store'
@@ -9,7 +9,8 @@ import { Footer } from './components/Footer'
 import { previewEdge } from './components/ZoomTrack'
 import { fmtSec, fmtTime } from './components/draw'
 import { loadAuth } from './api'
-import { newCut } from './cloud'
+import { newCut, transcribeVersion } from './cloud'
+import { takeSpeech } from './core/transcript'
 import { BackHome, Home } from './components/Home'
 import { Login, SaveIndicator, UserMenu } from './components/Account'
 
@@ -212,7 +213,31 @@ function Toolbar({ version }: { version: Version }) {
       </label>
       <span className="flex-1 text-[13px] text-fg-2" data-testid="summary">
         {version.takes.length} takes · {pending} a revisar
+        {version.transcript === 'pending' && <span className="ml-2 text-fg-3">· transcrevendo a locução…</span>}
+        {version.transcript === 'error' && (
+          <button className="btn btn-ghost btn-sm !h-6 !text-danger" onClick={() => void transcribeVersion(version.id)}>
+            Transcrição falhou · tentar de novo
+          </button>
+        )}
       </span>
+      {version.words && (
+        <button
+          className="btn btn-sm"
+          data-testid="copy-all"
+          title="Copia T01: fala, T02: fala… desta duração"
+          onClick={() => {
+            const txt = sortTakes(version.takes)
+              .map((t, i) => `T${String(i + 1).padStart(2, '0')}: ${takeSpeech(t, version.words)}`)
+              .join('\n')
+            void navigator.clipboard?.writeText(txt).then(
+              () => s.showToast('Falas copiadas'),
+              () => s.showToast('Não consegui copiar'),
+            )
+          }}
+        >
+          <Copy size={14} aria-hidden /> Copiar falas
+        </button>
+      )}
       {nSel > 0 && (
         <button
           className="btn btn-sm"

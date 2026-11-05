@@ -12,6 +12,7 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "cortador-db", "database_id": "97ef7d13-2e17-4efc-809e-e9cff0c5ea23" }
   ],
+  "ai": { "binding": "AI" },
   "kv_namespaces": [
     { "binding": "AUDIO", "id": "fe496024f6a44ffea29116b9c2a3cfad" }
   ],
