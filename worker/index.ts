@@ -34,6 +34,11 @@ function ensureSchema(env: Env) {
     env.DB.prepare('CREATE INDEX IF NOT EXISTS cuts_owner ON cuts(owner, updated_at DESC)'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)'),
     env.DB.prepare(
+      `CREATE TABLE IF NOT EXISTS users (
+        email TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '', picture TEXT NOT NULL DEFAULT '',
+        first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL, logins INTEGER NOT NULL DEFAULT 0)`,
+    ),
+    env.DB.prepare(
       `CREATE TABLE IF NOT EXISTS invites (
         email TEXT PRIMARY KEY, expires_at INTEGER NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL)`,
     ),
@@ -79,6 +84,13 @@ async function currentUser(req: Request, env: Env): Promise<SessionUser | null> 
 }
 
 async function startSession(env: Env, user: Omit<SessionUser, 'exp'>, origin: string) {
+  const now = Date.now()
+  await env.DB.prepare(
+    `INSERT INTO users (email, name, picture, first_seen, last_seen, logins) VALUES (?, ?, ?, ?, ?, 1)
+     ON CONFLICT(email) DO UPDATE SET name = excluded.name, picture = excluded.picture, last_seen = excluded.last_seen, logins = logins + 1`,
+  )
+    .bind(user.email, user.name, user.picture, now, now)
+    .run()
   const token = await signSession({ ...user, exp: Date.now() + SESSION_DAYS * DAY }, await secretOf(env))
   const h = new Headers({ location: `${origin}/` })
   h.append('set-cookie', cookie('sess', token, SESSION_DAYS * 86400))
@@ -127,7 +139,16 @@ async function auth(req: Request, env: Env, url: URL): Promise<Response> {
     const result = await verifyGoogleIdToken(idToken, env.GOOGLE_CLIENT_ID, state)
     if (typeof result === 'string') return deny(origin, 'falhou', '', `token:${result}`)
     await ensureSchema(env)
-    if (!(await allowed(env, result.email))) return deny(origin, 'nao-liberado', result.email)
+    if (!(await allowed(env, result.email))) {
+      const t = Date.now()
+      await env.DB.prepare(
+        `INSERT INTO users (email, name, picture, first_seen, last_seen, logins) VALUES (?, ?, ?, ?, ?, 0)
+         ON CONFLICT(email) DO UPDATE SET name = excluded.name, picture = excluded.picture, last_seen = excluded.last_seen`,
+      )
+        .bind(result.email, result.name ?? '', result.picture ?? '', t, t)
+        .run()
+      return deny(origin, 'nao-liberado', result.email)
+    }
     return startSession(env, { email: result.email, name: result.name ?? '', picture: result.picture ?? '' }, origin)
   }
   if (url.pathname === '/auth/logout') {
@@ -136,7 +157,16 @@ async function auth(req: Request, env: Env, url: URL): Promise<Response> {
   if (url.pathname === '/auth/dev' && env.DEV_LOGIN === '1') {
     const email = (url.searchParams.get('email') || 'dev@salva.studio').toLowerCase()
     await ensureSchema(env)
-    if (!(await allowed(env, email))) return deny(origin, 'nao-liberado', email)
+    if (!(await allowed(env, email))) {
+      const t = Date.now()
+      await env.DB.prepare(
+        `INSERT INTO users (email, name, picture, first_seen, last_seen, logins) VALUES (?, ?, '', ?, ?, 0)
+         ON CONFLICT(email) DO UPDATE SET last_seen = excluded.last_seen`,
+      )
+        .bind(email, email.split('@')[0], t, t)
+        .run()
+      return deny(origin, 'nao-liberado', email)
+    }
     return startSession(env, { email, name: email.split('@')[0], picture: '' }, origin)
   }
   return err(404, 'Rota não encontrada')
@@ -187,6 +217,13 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
   }
   const me = user.email
   const admin = isAdmin(me, env.ADMIN_EMAILS)
+  const now = Date.now()
+  await env.DB.prepare(
+    `INSERT INTO users (email, name, picture, first_seen, last_seen, logins) VALUES (?, ?, ?, ?, ?, 0)
+     ON CONFLICT(email) DO UPDATE SET last_seen = excluded.last_seen WHERE users.last_seen < ?`,
+  )
+    .bind(me, user.name, user.picture, now, now, now - 5 * 60_000)
+    .run()
   const parts = url.pathname.split('/').filter(Boolean).slice(1)
   const [res, id, sub] = parts
 
@@ -255,6 +292,30 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
       return new Response(obj, { headers: { 'content-type': 'audio/wav', 'cache-control': 'private, max-age=3600' } })
     }
     return err(405, 'Método não permitido')
+  }
+
+  if (res === 'users' && req.method === 'GET') {
+    if (!admin) return err(403, 'Só administradores veem os acessos')
+    const { results } = await env.DB.prepare(
+      `SELECT u.email, u.name, u.picture, u.first_seen, u.last_seen, u.logins,
+        (SELECT COUNT(*) FROM cuts c WHERE c.owner = u.email AND c.expires_at > ?) AS cuts,
+        (SELECT expires_at FROM invites i WHERE i.email = u.email) AS invite_expires
+       FROM users u ORDER BY u.last_seen DESC LIMIT 500`,
+    )
+      .bind(now)
+      .all<{ email: string; invite_expires: number | null }>()
+    return json(
+      results.map((r) => ({
+        ...r,
+        role: isAdmin(r.email, env.ADMIN_EMAILS)
+          ? 'admin'
+          : isStaff(r.email, env.ALLOWED_DOMAIN)
+            ? 'equipe'
+            : r.invite_expires && r.invite_expires > now
+              ? 'convidado'
+              : 'sem acesso',
+      })),
+    )
   }
 
   if (res === 'invites') {

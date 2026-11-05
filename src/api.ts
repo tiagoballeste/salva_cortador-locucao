@@ -47,6 +47,17 @@ export interface Invite {
   created_by: string
 }
 
+export interface UserRow {
+  email: string
+  name: string
+  picture: string
+  first_seen: number
+  last_seen: number
+  logins: number
+  cuts: number
+  role: 'admin' | 'equipe' | 'convidado' | 'sem acesso'
+}
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -104,6 +115,7 @@ export const api = {
     if (!r.ok) throw new ApiError(r.status, r.status === 404 ? 'O áudio deste corte expirou ou foi apagado.' : `Erro ${r.status}`)
     return r.arrayBuffer()
   },
+  listUsers: () => call<UserRow[]>('/api/users'),
   listInvites: () => call<Invite[]>('/api/invites'),
   addInvite: (email: string, days: number) => call<{ ok: true }>('/api/invites', jsonInit('POST', { email, days })),
   removeInvite: (email: string) => call<{ ok: true }>(`/api/invites/${encodeURIComponent(email)}`, { method: 'DELETE' }),
